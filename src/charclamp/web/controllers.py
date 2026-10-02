@@ -11,7 +11,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from charclamp.domain.models import BurnShift, Clamp, User
-from charclamp.domain.cross_yard import clamp_ids_by_code, peer_clamp_for_drawn
 from charclamp.domain.rules import RuleError, assert_can_set_clamp_status, can_mark_clamp_drawn
 from charclamp.infra.db import SessionLocal
 from charclamp.infra.security import verify_password
@@ -67,8 +66,8 @@ async def _load_timeline_context(clamp_id: int | None = None) -> dict[str, Any]:
             .order_by(BurnShift.started_at.desc())
         )
         if clamp_id is not None:
-            ids = clamp_ids_by_code(clamps, clamp_id)
-            query = query.where(BurnShift.clamp_id.in_(ids))
+            # 窑主键隔离：只读本窑班次，绝不按窑号跨坞展开。
+            query = query.where(BurnShift.clamp_id == clamp_id)
         shifts = list((await db.execute(query)).scalars().all())
         site_name = clamps[0].site.name if clamps else "乌石岗焖烧坞"
     return {
@@ -179,16 +178,8 @@ class TimelineController(Controller):
             clamp = result.scalar_one_or_none()
             if not clamp:
                 return Redirect("/")
-        async with SessionLocal() as db2:
-            all_clamps = list(
-                (
-                    await db2.execute(select(Clamp).options(selectinload(Clamp.shifts)))
-                )
-                .scalars()
-                .all()
-            )
-        peer = peer_clamp_for_drawn(all_clamps, clamp)
-        can_drawn, drawn_msg = can_mark_clamp_drawn(peer)
+        # 出炭门槛只依据本窑（主键）自己的班次峰值，不读同号隔壁坞。
+        can_drawn, drawn_msg = can_mark_clamp_drawn(clamp)
         return Template(
             template_name="partials/drawer_clamp.html",
             context={
