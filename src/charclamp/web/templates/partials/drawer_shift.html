@@ -7,7 +7,7 @@
     <label>炭窑
       <select name="clamp_id" required>
         {% for clamp in clamps %}
-        <option value="{{ clamp.id }}" {% if preselect_clamp_id == clamp.id %}selected{% endif %}>{{ clamp.code }}</option>
+        <option value="{{ clamp.id }}" {% if preselect_clamp_id == clamp.id %}selected{% endif %}>{{ clamp.site.name }} · {{ clamp.code }}</option>
         {% endfor %}
       </select>
     </label>

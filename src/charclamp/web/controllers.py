@@ -11,7 +11,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from charclamp.domain.models import BurnShift, Clamp, User
-from charclamp.domain.cross_yard import clamp_ids_by_code, peer_clamp_for_drawn
 from charclamp.domain.rules import RuleError, assert_can_set_clamp_status, can_mark_clamp_drawn
 from charclamp.infra.db import SessionLocal
 from charclamp.infra.security import verify_password
@@ -55,7 +54,7 @@ async def _load_timeline_context(clamp_id: int | None = None) -> dict[str, Any]:
                 await db.execute(
                     select(Clamp)
                     .options(selectinload(Clamp.site), selectinload(Clamp.shifts))
-                    .order_by(Clamp.code)
+                    .order_by(Clamp.site_id, Clamp.code, Clamp.id)
                 )
             )
             .scalars()
@@ -67,10 +66,11 @@ async def _load_timeline_context(clamp_id: int | None = None) -> dict[str, Any]:
             .order_by(BurnShift.started_at.desc())
         )
         if clamp_id is not None:
-            ids = clamp_ids_by_code(clamps, clamp_id)
-            query = query.where(BurnShift.clamp_id.in_(ids))
+            # 窑主键隔离坞：剪影/时间轴只按本窑主键过滤，绝不按窑号跨坞展开
+            query = query.where(BurnShift.clamp_id == clamp_id)
         shifts = list((await db.execute(query)).scalars().all())
-        site_name = clamps[0].site.name if clamps else "乌石岗焖烧坞"
+        active_clamp = next((c for c in clamps if c.id == clamp_id), None)
+        site_name = active_clamp.site.name if active_clamp else "全部窑场"
     return {
         "clamps": clamps,
         "shifts": shifts,
@@ -156,7 +156,17 @@ class TimelineController(Controller):
             return Redirect("/login")
         clamp_id = _parse_optional_int(request.query_params.get("clamp_id"))
         async with SessionLocal() as db:
-            clamps = list((await db.execute(select(Clamp).order_by(Clamp.code))).scalars().all())
+            clamps = list(
+                (
+                    await db.execute(
+                        select(Clamp)
+                        .options(selectinload(Clamp.site))
+                        .order_by(Clamp.site_id, Clamp.code, Clamp.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
         return Template(
             template_name="partials/drawer_shift.html",
             context={
@@ -179,16 +189,8 @@ class TimelineController(Controller):
             clamp = result.scalar_one_or_none()
             if not clamp:
                 return Redirect("/")
-        async with SessionLocal() as db2:
-            all_clamps = list(
-                (
-                    await db2.execute(select(Clamp).options(selectinload(Clamp.shifts)))
-                )
-                .scalars()
-                .all()
-            )
-        peer = peer_clamp_for_drawn(all_clamps, clamp)
-        can_drawn, drawn_msg = can_mark_clamp_drawn(peer)
+            # 出炭门槛只读本窑：按主键取窑，用本窑自己的班次判定
+            can_drawn, drawn_msg = can_mark_clamp_drawn(clamp)
         return Template(
             template_name="partials/drawer_clamp.html",
             context={

@@ -14,7 +14,8 @@ class RuleError(ValueError):
 def latest_shift_for_clamp(clamp: Clamp) -> BurnShift | None:
     if not clamp.shifts:
         return None
-    return max(clamp.shifts, key=lambda s: s.started_at)
+    # 同一窑并发登记时 started_at 可能相同，用主键作决胜，保证「最近一条」确定
+    return max(clamp.shifts, key=lambda s: (s.started_at, s.id or 0))
 
 
 def can_mark_clamp_drawn(clamp: Clamp) -> tuple[bool, str]:

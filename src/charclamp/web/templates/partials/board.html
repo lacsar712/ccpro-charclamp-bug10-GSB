@@ -35,7 +35,7 @@
     </span>
     <span class="kiln-meta">
       <strong>{{ clamp.code }}</strong>
-      <em>{{ status_labels.get(clamp.status, clamp.status) }} · {{ clamp.wood_species or '—' }}</em>
+      <em>{{ clamp.site.name }} · {{ status_labels.get(clamp.status, clamp.status) }} · {{ clamp.wood_species or '—' }}</em>
     </span>
   </a>
   {% endfor %}

@@ -13,6 +13,7 @@
           hx-target="#drawer-root"
           hx-swap="innerHTML"
         >{{ shift.clamp.code }}</button>
+        <span class="hint">{{ shift.clamp.site.name }}</span>
         <time datetime="{{ shift.started_at.isoformat() }}">
           {{ shift.started_at.strftime('%Y-%m-%d %H:%M') }}
         </time>
